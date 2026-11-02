@@ -4,7 +4,7 @@
   "platform": "linux-amd64",
   "core_sha256": "495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250",
   "files": {
-    ".gitattributes": "f9f034cfda2de0afd80b502270a8d30a7603287885cd8079e33216c698f534e6",
+    ".gitattributes": "b84b5f3dc92d591e089ff0db460b1249fadcbe1db9e70fa6735c3517a70e2d16",
     ".github/workflows/release.yml": "1fcdc195ed119bc76723c9d4afbd51f3946f28d8b465a25fe9feae2fb23ea769",
     ".gitignore": "859369966d91bd0e2b36e68c6e70ad33a6c9df455693deeed892313be47ddb84",
     "LICENSE": "34645460718f8e6309c554fa466f664beab4474596ac6a853f012e476ed34a5d",

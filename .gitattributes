@@ -5,3 +5,4 @@
 *.json text eol=lf
 *.elf binary
 *.c text eol=lf
+evidence/r3-dns-decompiled/*.c linguist-generated=true -whitespace
