@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250",
+  "binary_bytes": 43905148,
+  "functions": 42220,
+  "named_functions": 6445,
+  "instructions": 6797101,
+  "complete_text": true,
+  "scope": "All machine-code instructions and pclntab boundaries; not original source, complete decompilation or complete semantic understanding"
+}

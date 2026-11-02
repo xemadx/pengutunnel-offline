@@ -1,0 +1,45 @@
+name: Verify and release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check all distribution digests
+        run: python3 tools/check_package.py
+      - name: Test two isolated peers, transports and installer regressions
+        run: sudo bash tests/run-isolated.sh "$RUNNER_TEMP/pengu-results"
+      - name: Build reproducible distribution
+        run: python3 tools/package_release.py
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build exact verified tag
+        run: python3 tools/package_release.py
+      - name: Export complete machine code and function inventory
+        run: python3 tools/export_engine.py
+      - name: Upload assets and publish only when complete
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 tools/publish_release.py

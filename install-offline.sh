@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -o pipefail
+umask 077
 
 SCRIPT_VERSION="4.2.6-offline"
+PACKAGE_VERSION="v5.1.3-r3"
 
 # Local offline build: no upstream core/script updates and no license prompts.
 OFFLINE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 OFFLINE_CORE="${OFFLINE_DIR}/pengutunnel.offline.elf"
-OFFLINE_SHA="5d58cdde3483029a70c8b52b9434c4fe4bb4fbc093e47c5c38aba4be9361fb52"
+OFFLINE_SHA="495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250"
 
 INSTALL_DIR="/root/pengutunnel"          # core + configs + logs all live here
 BIN_PATH="/root/pengutunnel/pengutunnel" # the core binary
@@ -16,8 +18,35 @@ if [[ -t 1 ]]; then
   R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; B=$'\e[36m'; M=$'\e[35m'; W=$'\e[1;37m'; D=$'\e[2m'; N=$'\e[0m'
 else R=""; G=""; Y=""; B=""; M=""; W=""; D=""; N=""; fi
 ok(){ echo "${G}[ok]${N} $*"; }
-warn(){ echo "${Y}[!]${N} $*"; }
+warn(){ echo "${Y}[!]${N} $*" >&2; }
 err(){ echo "${R}[x]${N} $*" >&2; }
+valid_port(){ [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && (( 10#$1 <= 65535 )); }
+toml_string(){ local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\r'/\\r}"; s="${s//$'\n'/\\n}"; printf '"%s"' "$s"; }
+start_tunnel(){
+  local svc; svc="$(svc_of "$1")"
+  systemctl daemon-reload || { err "cannot reload systemd units"; return 1; }
+  systemctl enable "$svc" >/dev/null 2>&1 || { err "cannot enable $svc"; return 1; }
+  if systemctl is-active --quiet "$svc"; then
+    systemctl restart "$svc" || { err "cannot restart $svc"; return 1; }
+  else
+    systemctl start "$svc" || { err "cannot start $svc"; return 1; }
+  fi
+  sleep 2
+  systemctl is-active --quiet "$svc" || { err "$svc did not stay active; inspect its logs"; return 1; }
+}
+check_tunnel_slot(){
+  local id="$1" health="$2" file other
+  valid_port "$health" || { err 'invalid health port'; return 1; }
+  for file in "$INSTALL_DIR"/*.toml; do
+    [[ -f "$file" && "$file" != "$INSTALL_DIR/$id.toml" ]] || continue
+    other="$(sed -n 's/^health_port *= *\([0-9]*\).*/\1/p' "$file" | head -1)"
+    [[ "$other" != "$health" ]] || { err "health port $health belongs to ${file##*/}"; return 1; }
+  done
+  if [[ -f "$INSTALL_DIR/$id.toml" ]]; then
+    [[ "$(ask_yn "replace existing tunnel $id? (y/n)" n)" == y ]] || return 1
+    cp -p -- "$INSTALL_DIR/$id.toml" "$INSTALL_DIR/$id.toml.bak.$(date +%s)" || return 1
+  fi
+}
 hr(){ echo "${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"; }
 pause(){ read -rp "$(echo "${D}press enter...${N}")" _; }
 ask(){ local p="$1" d="${2:-}" a; if [[ -n "$d" ]]; then read -rp "${B}${p}${N} [${d}]: " a || return 1; echo "${a:-$d}"; else read -rp "${B}${p}${N}: " a || return 1; echo "$a"; fi; }
@@ -58,6 +87,49 @@ wask_req(){   # $1 prompt (required; blank re-asks)
     echo "${R}[x]${N} this field is required — please enter a value (or b = back)" >&2
   done
 }
+wport(){
+  while :; do
+    wask "$@" || return 1
+    (( WIZ_BACK )) && return 0
+    valid_port "$WIZ_VAL" && return 0
+    err "port must be an integer from 1 to 65535"
+  done
+}
+ask_port(){
+  local value
+  while :; do
+    value="$(ask "$@")" || return 1
+    if valid_port "$value"; then printf '%s\n' "$value"; return 0; fi
+    err "port must be an integer from 1 to 65535"
+  done
+}
+valid_port_range(){
+  [[ "$1" =~ ^[1-9][0-9]{0,4}(-[1-9][0-9]{0,4})?$ ]] || return 1
+  local first="${1%%-*}" last="${1##*-}"
+  valid_port "$first" && valid_port "$last" && (( 10#$first <= 10#$last ))
+}
+valid_forward_spec(){
+  local spec="${1#udp/}" main extra left right host
+  main="${spec%% *}"; extra="${spec#"$main"}"
+  [[ -z "$extra" || "$extra" == ' proxy_protocol=true' || "$extra" == ' proxy_protocol=false' || "$extra" == ' pp=true' || "$extra" == ' pp=false' ]] || return 1
+  left="${main%%=*}"; valid_port_range "$left" || return 1
+  [[ "$main" == *=* ]] || return 0
+  right="${main#*=}"
+  if [[ "$right" == *:* ]]; then
+    host="${right%:*}"; host="${host#[}"; host="${host%]}"
+    [[ "$host" =~ ^[A-Za-z0-9_.:-]+$ ]] || return 1
+    right="${right##*:}"
+  fi
+  valid_port_range "$right"
+}
+forward_to_peer(){
+  local spec="$1" peer="$2" prefix="" main extra left right
+  [[ "$spec" == udp/* ]] && { prefix=udp/; spec="${spec#udp/}"; }
+  main="${spec%% *}"; extra="${spec#"$main"}"; left="${main%%=*}"
+  if [[ "$main" == *=* ]]; then right="${main#*=}"; else right="$left"; fi
+  [[ "$right" == *:* ]] || right="${peer}:${right}"
+  printf '%s%s=%s%s' "$prefix" "$left" "$right" "$extra"
+}
 wyn(){   # $1 prompt  $2 default  -> WIZ_VAL = y|n
   local p="$1" d="${2:-}" a
   while :; do
@@ -86,7 +158,7 @@ core_at_least(){ refresh_core_version; [[ -n "$CORE_VER" && "$(printf '%s\n%s\n'
 load_sysinfo(){
   SYS_IP="$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([^ ]*\).*/\1/p' | head -1)"
   SYS_IP6="$(ip -6 -o addr show scope global 2>/dev/null | awk 'NR==1{split($4,a,"/");print a[1]}')"
-  SYS_LOC="local"; SYS_DC="offline build"; CORE_LATEST="v5.1.3-offline"
+  SYS_LOC="local"; SYS_DC="offline ${PACKAGE_VERSION}"; CORE_LATEST="v5.1.3"
 }
 
 banner(){
@@ -110,6 +182,7 @@ ART
   fi
 
   echo "  ${G}Script Version:${N} ${B}v${SCRIPT_VERSION}${N}"
+  echo "  ${G}Package Version:${N} ${B}${PACKAGE_VERSION}${N}"
   echo "  ${G}Core Version:${N}   ${B}${cver}${N}"
   echo "$sep"
   echo "  ${B}IPv4:${N}       ${M}${SYS_IP:-null}${N}"
@@ -152,15 +225,20 @@ install_prereqs(){
     { dpkg -s ca-certificates >/dev/null 2>&1 || [ -f /etc/ssl/certs/ca-certificates.crt ]; } || miss+=(ca-certificates)
     if [ ${#miss[@]} -eq 0 ]; then echo "prerequisites already present"; return; fi
     echo "installing prerequisites: ${miss[*]}"
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${miss[@]}" >/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq || return 1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${miss[@]}" >/dev/null || return 1
   elif command -v yum >/dev/null 2>&1; then
     local miss=()
     command -v curl >/dev/null 2>&1 || miss+=(curl)
     command -v tar  >/dev/null 2>&1 || miss+=(tar)
     command -v ip   >/dev/null 2>&1 || miss+=(iproute)
     if [ ${#miss[@]} -eq 0 ]; then echo "prerequisites already present"; return; fi
-    yum install -y -q "${miss[@]}" >/dev/null
+    yum install -y -q "${miss[@]}" >/dev/null || return 1
+  else
+    local utility
+    for utility in curl ip tar sha256sum; do
+      command -v "$utility" >/dev/null 2>&1 || { err "missing $utility; install prerequisites with your OS package manager"; return 1; }
+    done
   fi
 }
 
@@ -182,6 +260,13 @@ ensure_core(){
   local got=""; [[ -f "$BIN_PATH" ]] && got="$(sha256sum "$BIN_PATH" | awk '{print $1}')"
   [[ "$got" == "$OFFLINE_SHA" ]] && return 0
   install_core || { err "cannot install the supplied offline core"; exit 1; }
+  local id svc
+  for id in $(list_ids); do
+    svc="$(svc_of "$id")"
+    if systemctl is-active --quiet "$svc"; then
+      systemctl restart "$svc" || { err "new core installed but $svc could not restart"; return 1; }
+    fi
+  done
 }
 
 gen_psk(){ head -c 32 /dev/urandom | base64; }
@@ -199,6 +284,7 @@ wiz_run(){
       if (( ${#_stk[@]} > 0 )); then _i=${_stk[$((${#_stk[@]}-1))]}; unset '_stk[$((${#_stk[@]}-1))]'; else return 1; fi
       continue
     fi
+    (( _rc == 0 )) || return "$_rc"
     _stk+=("$_i"); _i=$((_i+1))
   done
   return 0
@@ -289,7 +375,14 @@ cn_dir(){
   wask 'select' "${_r_dir:-1}"; (( WIZ_BACK )) && return 0
   _r_dir="$WIZ_VAL"; dir="$WIZ_VAL"; _cn_role
 }
-cn_tunname(){ wask 'tun interface name' "${tun_name:-pengutun}"; (( WIZ_BACK )) && return 0; tun_name="$WIZ_VAL"; }
+cn_tunname(){
+  while :; do
+    wask 'tun interface name' "${tun_name:-pengutun}" || return 1
+    (( WIZ_BACK )) && return 0
+    [[ "$WIZ_VAL" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$ && "$WIZ_VAL" != . && "$WIZ_VAL" != .. ]] && { tun_name="$WIZ_VAL"; return 0; }
+    err 'interface name must use 1–15 letters, digits, dots, underscores or hyphens'
+  done
+}
 cn_mtu(){ wask 'tun MTU' "${mtu:-1380}"; (( WIZ_BACK )) && return 0; mtu="$WIZ_VAL"; [[ "$mtu" =~ ^[0-9]+$ ]] || mtu=1380; }
 cn_profile(){ wask 'tuning profile (fast | balance | resource | gaming)' "${tune_profile:-fast}"; (( WIZ_BACK )) && return 0; tune_profile="$WIZ_VAL"; }
 cn_workers(){
@@ -329,19 +422,19 @@ cn_ipxextra(){
 cn_portblock(){
   [[ "$is_ipx" == "1" ]] && return 3
   if [[ "$transport" == "dns" ]]; then
-    wask 'DNS UDP port' "${port:-53}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
+    wport 'DNS UDP port' "${port:-53}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
   elif [[ "$transport" == "ssh" ]]; then
-    wask 'SSH port (any port — the SSH banner does the mimicry)' "${port:-2020}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
+    wport 'SSH port (any port — the SSH banner does the mimicry)' "${port:-2020}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
   elif [[ "$role" == "dualway" ]]; then
     echo "  ${D}dualway uses TWO ports: THIS side's LISTEN port (the peer dials in) and the${N}"
     echo "  ${D}PEER's port (we dial out). Same or different is fine — just make sure each${N}"
     echo "  ${D}side's peer-port equals the OTHER side's listen port. Open both on the firewall.${N}"
-    wask 'this side LISTEN port (peer dials in here)' "${dw_lport:-443}"; (( WIZ_BACK )) && return 0; dw_lport="$WIZ_VAL"
-    wask 'peer port (we dial out to — the peer LISTEN port)' "${dw_rport:-$dw_lport}"; (( WIZ_BACK )) && return 0; dw_rport="$WIZ_VAL"
+    wport 'this side LISTEN port (peer dials in here)' "${dw_lport:-443}"; (( WIZ_BACK )) && return 0; dw_lport="$WIZ_VAL"
+    wport 'peer port (we dial out to — the peer LISTEN port)' "${dw_rport:-$dw_lport}"; (( WIZ_BACK )) && return 0; dw_rport="$WIZ_VAL"
   elif [[ "$role" == "server" ]]; then
-    wask 'listener port (all connections use this one port)' "${port:-443}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
+    wport 'listener port (all connections use this one port)' "${port:-443}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
   else
-    wask 'peer port (all connections use this one port)' "${port:-443}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
+    wport 'peer port (all connections use this one port)' "${port:-443}"; (( WIZ_BACK )) && return 0; port="$WIZ_VAL"
   fi
 }
 cn_pool(){
@@ -358,7 +451,7 @@ cn_algo(){
 }
 cn_health(){
   local sidename; [[ "$side" == "1" ]] && sidename="iran" || sidename="kharej"
-  wask 'health port (also names the service)' "${health:-1234}"; (( WIZ_BACK )) && return 0; health="$WIZ_VAL"; [[ -n "$health" ]] || health=1234
+  wport 'health port (also names the service)' "${health:-1234}"; (( WIZ_BACK )) && return 0; health="$WIZ_VAL"; [[ -n "$health" ]] || health=1234
   id="${sidename}${health}"
 }
 cn_psk(){
@@ -371,19 +464,21 @@ cn_forward(){
   [[ "$side" == "1" ]] || return 3
   local _lip _base _last peer_tun
   _lip="${tun_addr%%/*}"; _base="${_lip%.*}"; _last="${_lip##*.}"
-  if [[ "$_last" == "2" ]]; then peer_tun="${_base}.1"; else peer_tun="${_base}.2"; fi
+  case "$_last" in 1) peer_tun="${_base}.2";; 2) peer_tun="${_base}.1";; *) peer_tun="";; esac
   local pp_gate="n"; fwd_block=""
   local _fspecs=""
   echo "  ${D}Port-forward (optional): expose local TCP and/or UDP ports over the tunnel${N}"
   echo "  ${D}to the far side (${peer_tun}). TCP can keep the real client IP via PROXY v2.${N}"
   echo "  ${D}Enter ports comma-separated — a single port, a range, or PORT=FARPORT:${N}"
   echo "  ${D}  e.g.  2096,2097    or    200-300    or    8000=9000${N}"
-  if [[ "$(ask_yn 'add TCP port-forward(s)? (y/n)' 'y')" == "y" ]]; then
-    pp_gate="$(ask_yn '  proxy_protocol — send real client IP? (y/n)' 'n')"
+  local add_tcp add_udp
+  add_tcp="$(ask_yn 'add TCP port-forward(s)? (y/n)' 'y')" || { INPUT_EOF=1; return 1; }
+  if [[ "$add_tcp" == "y" ]]; then
+    pp_gate="$(ask_yn '  proxy_protocol — send real client IP? (y/n)' 'n')" || { INPUT_EOF=1; return 1; }
     echo "  ${D}Enter port specs (commas ok, e.g. 2096,2097 or 200-300); blank line = done.${N}"
     [[ "$pp_gate" == "y" ]] && echo "  ${D}proxy_protocol is asked for EACH entry (default no); it is set per-port, not globally.${N}"
     while true; do
-      local line; line="$(ask '  TCP ports e.g. 2096,2097 or 200-300 (blank = done)' '')"
+      local line; line="$(ask '  TCP ports e.g. 2096,2097 or 200-300 (blank = done)' '')" || { INPUT_EOF=1; return 1; }
       [[ -z "$line" ]] && break
       local lpp="false"
       [[ "$pp_gate" == "y" && "$(ask_yn '    proxy_protocol for these? (y/n)' 'n')" == "y" ]] && lpp="true"
@@ -392,6 +487,14 @@ cn_forward(){
       for s in "${parts[@]}"; do
         s="$(printf '%s' "$s" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
         [[ -z "$s" ]] && continue
+        valid_forward_spec "$s" || { err "invalid forward port specification: $s"; continue; }
+        if [[ -z "$peer_tun" ]]; then
+          wask_req 'far-side tun IPv4 (required for custom tun addresses)' || return 1
+          (( WIZ_BACK )) && return 0
+          l4_is_ipv4 "$WIZ_VAL" || { err 'invalid far-side tun IPv4'; return 1; }
+          peer_tun="$WIZ_VAL"
+        fi
+        s="$(forward_to_peer "$s" "$peer_tun")"
         if [[ "$lpp" == "true" && "$s" != *proxy_protocol=* && "$s" != *pp=* ]]; then s="$s proxy_protocol=true"; fi
         _fspecs="${_fspecs}  \"${s}\",
 "
@@ -399,11 +502,15 @@ cn_forward(){
       done
     done
   fi
-  if [[ "$transport" != "dns" && "$transport" != "ssh" ]] && [[ "$(ask_yn 'add UDP port-forward(s)? (y/n)' 'n')" == "y" ]]; then
+  add_udp=n
+  if [[ "$transport" != "dns" && "$transport" != "ssh" ]]; then
+    add_udp="$(ask_yn 'add UDP port-forward(s)? (y/n)' 'n')" || { INPUT_EOF=1; return 1; }
+  fi
+  if [[ "$add_udp" == "y" ]]; then
     echo "  ${D}UDP relays datagrams over the tunnel (e.g. WireGuard 51820, game, DNS).${N}"
     echo "  ${D}proxy_protocol does not apply to UDP. blank line = done.${N}"
     while true; do
-      local uline; uline="$(ask '  UDP ports e.g. 51820 or 7000-7100 (blank = done)' '')"
+      local uline; uline="$(ask '  UDP ports e.g. 51820 or 7000-7100 (blank = done)' '')" || { INPUT_EOF=1; return 1; }
       [[ -z "$uline" ]] && break
       local uparts; IFS=',' read -ra uparts <<< "$uline"
       local us
@@ -411,6 +518,14 @@ cn_forward(){
         us="$(printf '%s' "$us" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
         [[ -z "$us" ]] && continue
         us="${us#udp/}"
+        valid_forward_spec "$us" || { err "invalid UDP forward specification: $us"; continue; }
+        if [[ -z "$peer_tun" ]]; then
+          wask_req 'far-side tun IPv4 (required for custom tun addresses)' || return 1
+          (( WIZ_BACK )) && return 0
+          l4_is_ipv4 "$WIZ_VAL" || { err 'invalid far-side tun IPv4'; return 1; }
+          peer_tun="$WIZ_VAL"
+        fi
+        us="$(forward_to_peer "$us" "$peer_tun")"
         _fspecs="${_fspecs}  \"udp/${us}\",
 "
         ok "  + udp/${us}"
@@ -436,11 +551,19 @@ configure_new(){
   [[ "$CN_ABORT" == "1" ]] && { pause; return; }
   [[ "$GO_L4" == "1" ]] && { configure_l4 "$side" "$l4_kind"; return; }
   mkdir -p "$INSTALL_DIR"
+  check_tunnel_slot "$id" "$health" || return 1
+  local existing other_name other_ip
+  for existing in "$INSTALL_DIR"/*.toml; do
+    [[ -f "$existing" && "$existing" != "$INSTALL_DIR/$id.toml" ]] || continue
+    other_name="$(sed -n 's/^name *= *"\([^"]*\)".*/\1/p' "$existing" | head -1)"
+    other_ip="$(sed -n 's/^address *= *"\([^"]*\)".*/\1/p' "$existing" | head -1)"
+    [[ "$tun_name" != "$other_name" && "${tun_addr%%/*}" != "${other_ip%%/*}" ]] || { err "tun name or IP conflicts with ${existing##*/}"; return 1; }
+  done
   local conf; conf="${INSTALL_DIR}/${id}.toml"
   {
     echo "[transport]"
-    if [[ "$is_ipx" == "1" ]]; then echo "type = \"ipx\""; else echo "type = \"${transport}\""; fi
-    echo "mode = \"${role}\""
+    if [[ "$is_ipx" == "1" ]]; then echo "type = \"ipx\""; else printf 'type = %s\n' "$(toml_string "$transport")"; fi
+    printf 'mode = %s\n' "$(toml_string "$role")"
     if [[ "$is_ipx" == "1" ]]; then echo "rekey_interval = 200"; fi
     if [[ "$is_ipx" != "1" ]]; then
       if [[ "$role" == "dualway" ]]; then
@@ -453,30 +576,30 @@ configure_new(){
     echo ""
     if [[ "$is_ipx" == "1" ]]; then
       echo "[ipx]"
-      echo "mode = \"${role}\""
-      echo "profile = \"${transport}\""
-      echo "listen_ip = \"${src_ip}\""
-      echo "dst_ip = \"${peer}\""
-      [[ -n "$bind_if" ]] && echo "interface = \"${bind_if}\""
-      [[ -n "$spoof_src" ]] && echo "spoof_source = \"${spoof_src}\""
-      [[ -n "$spoof_dst" ]] && echo "spoof_peer = \"${spoof_dst}\""
+      printf 'mode = %s\n' "$(toml_string "$role")"
+      printf 'profile = %s\n' "$(toml_string "$transport")"
+      printf 'listen_ip = %s\n' "$(toml_string "$src_ip")"
+      printf 'dst_ip = %s\n' "$(toml_string "$peer")"
+      [[ -n "$bind_if" ]] && printf 'interface = %s\n' "$(toml_string "$bind_if")"
+      [[ -n "$spoof_src" ]] && printf 'spoof_source = %s\n' "$(toml_string "$spoof_src")"
+      [[ -n "$spoof_dst" ]] && printf 'spoof_peer = %s\n' "$(toml_string "$spoof_dst")"
       if [[ "$transport" == "icmp" ]]; then echo "icmp_type = ${icmp_type}"; echo "icmp_code = ${icmp_code}"; fi
       echo ""
     fi
     echo "[tun]"
-    echo "name = \"${tun_name}\""
-    echo "address = \"${tun_addr}\""
+    printf 'name = %s\n' "$(toml_string "$tun_name")"
+    printf 'address = %s\n' "$(toml_string "$tun_addr")"
     echo "mtu = ${mtu}"
     echo "health_port = ${health}"
     echo ""
     echo "[security]"
     echo "enable_encryption = true"
-    echo "algorithm = \"${algo}\""
-    echo "psk = \"${psk}\""
+    printf 'algorithm = %s\n' "$(toml_string "$algo")"
+    printf 'psk = %s\n' "$(toml_string "$psk")"
     if [[ "$lic_enabled" == "true" ]]; then
       echo ""
       echo "[license]"
-      echo "key = \"${lic_key}\""
+      printf 'key = %s\n' "$(toml_string "$lic_key")"
     fi
     echo ""
     echo "[health]"
@@ -487,7 +610,7 @@ configure_new(){
     echo ""
     echo "[tuning]"
     echo "auto_tuning = true"
-    echo "profile = \"${tune_profile}\""
+    printf 'profile = %s\n' "$(toml_string "$tune_profile")"
     echo "workers = ${workers}"
     echo "channel_size = 0"
     echo "so_sndbuf = 0"
@@ -535,9 +658,7 @@ EOF
       fi
     fi
   fi
-  systemctl daemon-reload
-  systemctl enable --now "$(svc_of "$id")" >/dev/null 2>&1
-  sleep 2
+  start_tunnel "$id" || { pause; return 1; }
   ok "tunnel ${W}${id}${N} (${role}/${transport}) — $(systemctl is-active "$(svc_of "$id")")"
   echo "  ${D}config: ${conf}   log: $(log_of "$id")${N}"
   pause
@@ -640,7 +761,7 @@ configure_l4(){
     peerport)
       if [[ "$listens" == "1" ]]; then
         l4_http && echo "  ${D}Behind a CDN use a port it proxies (Cloudflare HTTPS: 443 2053 2083 2087 2096 8443; plain HTTP: 80 8080 8880 2052 2082 2086 2095).${N}"
-        if [[ "$role" == "server" ]]; then wask 'carrier listen port (Kharej dials this)' "${port:-443}"; else wask 'carrier listen port (the Iran edge dials this)' "${port:-443}"; fi
+        if [[ "$role" == "server" ]]; then wport 'carrier listen port (Kharej dials this)' "${port:-443}"; else wport 'carrier listen port (the Iran edge dials this)' "${port:-443}"; fi
         (( WIZ_BACK )) && { step=dir; continue; }; port="$WIZ_VAL"
       elif l4_cdn; then
         local _other=Kharej _who='the Kharej exit'
@@ -661,14 +782,14 @@ configure_l4(){
         local _cdn_ports="443 2053 2083 2087 2096 8443" _cdn_def=443
         [[ "$transport" == "ws" || "$transport" == "xhttp" ]] && { _cdn_ports="80 8080 8880 2052 2082 2086 2095"; _cdn_def=80; }
         echo "  ${D}Use a port your CDN proxies (Cloudflare ${transport}: ${_cdn_ports}); the ${_other} server listens on the SAME port.${N}"
-        wask "carrier port (${_who} listens on)" "${port:-$_cdn_def}"; (( WIZ_BACK )) && continue; port="$WIZ_VAL"
+        wport "carrier port (${_who} listens on)" "${port:-$_cdn_def}"; (( WIZ_BACK )) && continue; port="$WIZ_VAL"
       else
         local _peer_q='peer public IP (the Iran edge)' _port_q='carrier port (the Iran edge listens on)'
         [[ "$role" == "server" ]] && { _peer_q='peer public IP (the Kharej exit)'; _port_q='carrier port (the Kharej exit listens on)'; }
         wask_req "$_peer_q"; (( WIZ_BACK )) && { l4_has_reach && step=reach || step=dir; continue; }
         l4_is_ipv4 "$WIZ_VAL" || l4_is_domain "$WIZ_VAL" || { err "'${WIZ_VAL}' is not an IP address"; continue; }
         peer="$WIZ_VAL"
-        wask "$_port_q" "${port:-443}"; (( WIZ_BACK )) && { continue; }; port="$WIZ_VAL"
+        wport "$_port_q" "${port:-443}"; (( WIZ_BACK )) && { continue; }; port="$WIZ_VAL"
       fi
       step=profile ;;
     profile)
@@ -798,7 +919,7 @@ configure_l4(){
       step=health ;;
     health)
       [[ "$side" == "1" ]] && sidename="iran" || sidename="kharej"
-      wask 'health port (also names the service)' "${health:-1234}"; (( WIZ_BACK )) && { step=algo; continue; }; health="$WIZ_VAL"; [[ -n "$health" ]] || health=1234
+      wport 'health port (also names the service)' "${health:-1234}"; (( WIZ_BACK )) && { step=algo; continue; }; health="$WIZ_VAL"; [[ -n "$health" ]] || health=1234
       id="${sidename}${health}"
       step=psk ;;
     psk)
@@ -814,7 +935,7 @@ configure_l4(){
         wyn '  proxy_protocol — send real client IP? (y/n)' 'n'; (( WIZ_BACK )) && { step=psk; continue; }; pp_gate="$WIZ_VAL"
         [[ "$pp_gate" == "y" ]] && echo "  ${D}proxy_protocol is asked for EACH entry (default no); it is set per-port, not globally.${N}"
         while true; do
-          local line; line="$(ask '  ports e.g. 2096,2097 or 200-300 (blank = done)' '')"
+          local line; line="$(ask '  ports e.g. 2096,2097 or 200-300 (blank = done)' '')" || { INPUT_EOF=1; return 1; }
           [[ -z "$line" ]] && break
           local lpp="false"
           [[ "$pp_gate" == "y" && "$(ask_yn '    proxy_protocol for these? (y/n)' 'n')" == "y" ]] && lpp="true"
@@ -823,6 +944,7 @@ configure_l4(){
           for s in "${parts[@]}"; do
             s="$(printf '%s' "$s" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
             [[ -z "$s" ]] && continue
+            valid_forward_spec "$s" || { err "invalid forward port specification: $s"; continue; }
             if [[ "$lpp" == "true" && "$s" != *proxy_protocol=* && "$s" != *pp=* ]]; then s="$s proxy_protocol=true"; fi
             fspecs="${fspecs}  \"${s}\",
 "
@@ -843,11 +965,12 @@ ${fspecs}]
   done
 
   mkdir -p "$INSTALL_DIR"
+  check_tunnel_slot "$id" "$health" || return 1
   local conf="${INSTALL_DIR}/${id}.toml"
   {
     echo "[transport]"
-    echo "type = \"${transport}\""
-    echo "mode = \"${role}\""
+    printf 'type = %s\n' "$(toml_string "$transport")"
+    printf 'mode = %s\n' "$(toml_string "$role")"
     # Through a CDN the edge dials the clean edge IP (or the domain, resolved here) and sends
     # the domain as the SNI and the Host; otherwise the Host is left to the core (= the SNI).
     if [[ "$listens" == "1" ]]; then echo "listen = \"0.0.0.0:${port}\""
@@ -856,22 +979,22 @@ ${fspecs}]
     echo "pool_connection = ${pool}"
     [[ -n "$l4hdr" ]] && echo "l4_header = \"${l4hdr}\""
     if l4_tlsopt; then
-      if l4_cdn; then echo "sni = \"${cdn_domain}\""; else echo "sni = \"${tls_sni:-www.cloudflare.com}\""; fi
+      if l4_cdn; then printf 'sni = %s\n' "$(toml_string "$cdn_domain")"; else printf 'sni = %s\n' "$(toml_string "${tls_sni:-www.cloudflare.com}")"; fi
       echo "tls_fingerprint = \"${tls_fp:-chrome}\""
     fi
     if [[ "$transport" == "ws" || "$transport" == "wss" ]]; then
       echo "ws_path = \"${ws_path:-/ws}\""
-      l4_cdn && echo "ws_host = \"${cdn_domain}\""
+      l4_cdn && printf 'ws_host = %s\n' "$(toml_string "$cdn_domain")"
     fi
     if l4_xhttp; then
       echo "xhttp_path = \"${xh_path:-/xhttp}\""
-      l4_cdn && echo "xhttp_host = \"${cdn_domain}\""
+      l4_cdn && printf 'xhttp_host = %s\n' "$(toml_string "$cdn_domain")"
       [[ "$xh_cdn" == "y" ]] && echo "xhttp_cdn = true"
     fi
     [[ "$ldir" == "direct" ]] && echo "l4_direction = \"direct\""
     if l4_spoof; then
       echo "sni_spoof = true"
-      echo "sni_spoof_names = \"${spoof_names}\""
+      printf 'sni_spoof_names = %s\n' "$(toml_string "$spoof_names")"
       [[ "${spoof_ttl:-0}" != "0" ]] && echo "sni_spoof_ttl = ${spoof_ttl}"
       [[ "$spoof_strict" == "y" ]] && echo "sni_spoof_strict = true"
     fi
@@ -886,9 +1009,9 @@ ${fspecs}]
       echo "enable_encryption = false"
     else
       echo "enable_encryption = true"
-      echo "algorithm = \"${algo}\""
+      printf 'algorithm = %s\n' "$(toml_string "$algo")"
     fi
-    echo "psk = \"${psk}\""
+    printf 'psk = %s\n' "$(toml_string "$psk")"
     echo ""
     if [[ -n "$lic_block" ]]; then printf '%s\n' "$lic_block"; fi
     echo "[health]"
@@ -897,7 +1020,7 @@ ${fspecs}]
     echo ""
     echo "[tuning]"
     echo "auto_tuning = true"
-    echo "profile = \"${tune_profile}\""
+    printf 'profile = %s\n' "$(toml_string "$tune_profile")"
     echo "workers = ${workers}"
     echo "stream_window = ${swin:-0}"
     echo ""
@@ -926,9 +1049,7 @@ StandardError=append:$(log_of "$id")
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
-  systemctl enable --now "$(svc_of "$id")" >/dev/null 2>&1
-  sleep 2
+  start_tunnel "$id" || { pause; return 1; }
   ok "tunnel ${W}${id}${N} (${role}/${transport}, ${ldir}) — $(systemctl is-active "$(svc_of "$id")")"
   echo "  ${D}config: ${conf}   log: $(log_of "$id")${N}"
   if [[ "$ldir" == "direct" ]]; then
@@ -1048,10 +1169,19 @@ status_all(){
 
 update_core(){
   banner
-  install_core && { for id in $(list_ids); do systemctl restart "$(svc_of "$id")"; done; ok "offline core installed, tunnels restarted"; }
+  install_core || { pause; return 1; }
+  local id
+  for id in $(list_ids); do
+    systemctl restart "$(svc_of "$id")" || { err "failed to restart $id"; pause; return 1; }
+  done
+  ok "offline core installed, tunnels restarted"
   pause
 }
-update_script(){ banner; warn "local package only: replace install-offline.sh from the reviewed offline package"; pause; }
+update_script(){
+  if [[ -x /usr/local/bin/pengu ]]; then exec /usr/local/bin/pengu update; fi
+  warn 'Run the one-line GitHub installer to install or update the packaged CLI'
+  pause
+}
 
 
 AU_UNIT="pengu-core-autoupdate"
@@ -1143,23 +1273,23 @@ _ipl_enable(){
     [[ "$mode" == "watcher" ]] && mode="enforcer" || mode="watcher"
   fi
   peerip="$(sed -n -e 's/^ *dst_ip *= *"\([^"]*\)".*/\1/p' -e 's/^ *remote *= *"\([^":]*\).*/\1/p' "$conf" 2>/dev/null | head -1)"
-  port="$(ask 'control port (tun tunnels use it inside the tunnel; tcpfwd opens it only to the other server)' '1055')"
+  port="$(ask_port 'control port (tun tunnels use it inside the tunnel; tcpfwd opens it only to the other server)' '1055')" || return 1
   strip_block "$conf" "xui_iplimit"
   {
     echo ""
     echo "[xui_iplimit]"
     echo "enabled = true"
-    echo "mode = \"${mode}\""
+    printf 'mode = %s\n' "$(toml_string "$mode")"
     echo "control_port = ${port}"
     if [[ "$mode" == "watcher" ]]; then
       local jail sa; jail="$(ask 'fail2ban jail to mirror' '3x-ipl')"
       sa="$peerip"; [[ -n "$sa" ]] || sa="$(ask_req 'ingress (Iran) public IP')"
-      echo "jail = \"${jail}\""
+      printf 'jail = %s\n' "$(toml_string "$jail")"
       echo "poll_interval = 3"
       echo "server_addr = \"${sa}:${port}\""
       systemctl is-active fail2ban >/dev/null 2>&1 || warn "fail2ban is not active here — the watcher needs it (x-ui installs it)"
     else
-      [[ -n "$peerip" ]] && echo "peer_ip = \"${peerip}\""
+      [[ -n "$peerip" ]] && printf 'peer_ip = %s\n' "$(toml_string "$peerip")"
       echo "max_ban_minutes = 45"
       command -v iptables >/dev/null 2>&1 || warn "iptables not found — the enforcer needs it"
     fi
@@ -1215,6 +1345,7 @@ xui_iplimit_menu(){
     i=$((i+1))
   done
   local sel; sel="$(ask 'select tunnel #' '1')"; [[ "$sel" =~ ^[0-9]+$ ]] || return
+  (( sel >= 1 && sel <= ${#ids[@]} )) || { err "invalid tunnel number"; return 1; }
   id="${ids[$((sel-1))]}"; [[ -n "$id" ]] || return
   local conf; conf="$(conf_of "$id")"; [[ -f "$conf" ]] || { err "config not found for ${id}"; pause; return; }
   while true; do
@@ -1244,12 +1375,25 @@ APT_SRC="/etc/apt/sources.list.d/ubuntu.sources"
 APT_BAK="/etc/apt/pengu-ubuntu-sources.bak"
 
 _apt_code(){ . /etc/os-release 2>/dev/null; echo "${VERSION_CODENAME:-noble}"; }
-_bench_mirrors(){ local m t; for m in $1; do t="$(curl -o /dev/null -s -w '%{time_total}' --max-time 5 "${m}/dists/${2}/Release" 2>/dev/null)"; [[ -n "$t" && "$t" != 0.000000 ]] && echo "$t $m"; done; }
-_bench_dns(){ local e pair ip name t0 t1; for e in $1; do pair="${e%%:*}"; ip="${pair%%,*}"; name="${e##*:}"; t0=$(date +%s%3N); if timeout 2 bash -c "exec 3<>/dev/tcp/${ip}/53" 2>/dev/null; then t1=$(date +%s%3N); echo "$((t1-t0)) $pair $name"; fi; done; }
+_bench_mirrors(){ local m t; for m in $1; do t="$(curl --fail -o /dev/null -s -w '%{time_total}' --max-time 5 "${m}/dists/${2}/Release" 2>/dev/null)" || continue; [[ -n "$t" && "$t" != 0.000000 ]] && echo "$t $m"; done; }
+_bench_dns(){
+  command -v dig >/dev/null 2>&1 || { err 'DNS testing requires dig (dnsutils / bind-utils)'; return 1; }
+  local e pair ip name t0 t1 answer
+  for e in $1; do
+    pair="${e%%:*}"; ip="${pair%%,*}"; name="${e##*:}"; t0=$(date +%s%3N)
+    answer="$(timeout 3 dig +time=2 +tries=1 +short "@$ip" example.com A 2>/dev/null)" || continue
+    grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' <<< "$answer" || continue
+    t1=$(date +%s%3N); echo "$((t1-t0)) $pair $name"
+  done
+}
 
 _set_mirror(){
-  [[ -f "$APT_BAK" ]] || cp -a "$APT_SRC" "$APT_BAK" 2>/dev/null
-  cat > "$APT_SRC" <<EOF
+  local ID="" VERSION_ID=""
+  . /etc/os-release 2>/dev/null || { err 'cannot identify this OS'; return 1; }
+  [[ "$ID" == ubuntu && "${VERSION_ID%%.*}" =~ ^[0-9]+$ && "${VERSION_ID%%.*}" -ge 24 ]] || { err 'mirror tool supports Ubuntu 24+ only'; return 1; }
+  [[ -f "$APT_BAK" ]] || cp -a "$APT_SRC" "$APT_BAK" 2>/dev/null || { err 'could not back up apt sources'; return 1; }
+  local temporary; temporary="$(mktemp "${APT_SRC%/*}/.pengu-sources.XXXXXXXX")" || return 1
+  cat > "$temporary" <<EOF
 Types: deb
 URIs: ${1}/
 Suites: ${2} ${2}-updates ${2}-backports
@@ -1262,6 +1406,7 @@ Suites: ${2}-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
+  chmod 644 "$temporary" && mv -f -- "$temporary" "$APT_SRC" || { rm -f -- "$temporary"; err 'could not replace apt sources'; return 1; }
   ok "mirror set to ${1}  (run 'apt-get update' yourself when you want)"
 }
 _mirror_auto(){
@@ -1289,7 +1434,12 @@ _mirror_manual(){
   [[ "$n" =~ ^[0-9]+$ && -n "${urls[$n]}" ]] || { err "invalid choice"; return; }
   ok "selected: ${urls[$n]}"; _set_mirror "${urls[$n]}" "$code"
 }
-_mirror_restore(){ if [[ -f "$APT_BAK" ]]; then cp -a "$APT_BAK" "$APT_SRC"; ok "restored Ubuntu default sources"; else warn "no pengu backup found"; fi; }
+_mirror_restore(){
+  [[ -f "$APT_BAK" ]] || { err 'no apt sources backup exists'; return 1; }
+  local temporary; temporary="$(mktemp "${APT_SRC%/*}/.pengu-restore.XXXXXXXX")" || return 1
+  cp -p -- "$APT_BAK" "$temporary" && mv -f -- "$temporary" "$APT_SRC" || { rm -f -- "$temporary"; err 'apt sources restore failed'; return 1; }
+  ok 'restored previous apt sources'
+}
 best_mirror(){
   while true; do
     banner
@@ -1309,12 +1459,17 @@ best_mirror(){
 }
 
 _set_dns(){
-  [[ -f /etc/resolv.conf.pengu-orig ]] || cp -aL /etc/resolv.conf /etc/resolv.conf.pengu-orig 2>/dev/null
-  { echo "# set by pengutunnel installer"; echo "nameserver $1"; [[ -n "$2" ]] && echo "nameserver $2"; } > "/tmp/rc.$$"
-  rm -f /etc/resolv.conf; mv "/tmp/rc.$$" /etc/resolv.conf
+  l4_is_ipv4 "$1" && { [[ -z "$2" ]] || l4_is_ipv4 "$2"; } || { err 'invalid DNS address'; return 1; }
+  if [[ ! -f /etc/resolv.conf.pengu-orig ]]; then
+    cp -aL /etc/resolv.conf /etc/resolv.conf.pengu-orig 2>/dev/null || { err 'could not back up resolv.conf'; return 1; }
+  fi
+  local temporary; temporary="$(mktemp)" || return 1
+  { echo "# set by pengutunnel installer"; echo "nameserver $1"; [[ -n "$2" ]] && echo "nameserver $2"; } > "$temporary"
+  mv -f -- "$temporary" /etc/resolv.conf || { rm -f -- "$temporary"; err 'could not replace resolv.conf; the previous file was retained'; return 1; }
   ok "DNS set: $1${2:+, $2}"
 }
 _dns_auto(){
+  command -v dig >/dev/null 2>&1 || { err 'install dnsutils / bind-utils before benchmarking DNS'; return 1; }
   echo "testing famous foreign DNS first..."
   local tmp; tmp="$(mktemp)"
   _bench_dns "$FOREIGN_DNS" | sort -n > "$tmp"
@@ -1337,7 +1492,12 @@ _dns_manual(){
   [[ "$n" =~ ^[0-9]+$ && -n "${pairs[$n]}" ]] || { err "invalid choice"; return; }
   ok "selected: ${names[$n]}"; _set_dns "${pairs[$n]%%,*}" "${pairs[$n]#*,}"
 }
-_dns_restore(){ if [[ -f /etc/resolv.conf.pengu-orig ]]; then rm -f /etc/resolv.conf; cp -a /etc/resolv.conf.pengu-orig /etc/resolv.conf; ok "resolv.conf restored"; else rm -f /etc/resolv.conf; ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 2>/dev/null; systemctl restart systemd-resolved 2>/dev/null; ok "restored to systemd-resolved default"; fi; }
+_dns_restore(){
+  [[ -f /etc/resolv.conf.pengu-orig ]] || { err 'no DNS backup exists; configuration was not changed'; return 1; }
+  local temporary; temporary="$(mktemp)" || return 1
+  cp -- /etc/resolv.conf.pengu-orig "$temporary" && mv -f -- "$temporary" /etc/resolv.conf || { rm -f -- "$temporary"; err 'DNS restore failed'; return 1; }
+  ok 'resolv.conf restored'
+}
 best_dns(){
   while true; do
     banner
@@ -1399,8 +1559,8 @@ menu(){
     echo "  ${B}3. Check tunnel status${N}"
     echo "  ${B}4. x-ui IP-limit ban sync${N}"
     echo "  ${B}5. Auto-update / keeper${N} (remote updates OFF; keeper $(kp_enabled && echo ON || echo OFF))"
-    echo "  ${G}6. Update core${N}"
-    echo "  ${G}7. Update script${N}"
+    echo "  ${G}6. Reinstall packaged core${N}"
+    echo "  ${G}7. Update package from GitHub${N}"
     echo "  ${G}8. Remove core${N}"
     echo "  ${B}9. Best apt mirror${N}"
     echo "  ${B}10. Best DNS${N}"
@@ -1429,6 +1589,6 @@ need_root
 [[ -t 0 ]] || { err "an interactive terminal is required"; exit 1; }
 offline_disable_remote_updates
 printf "${D}loading…${N}\r"
-ensure_core
+ensure_core || exit 1
 load_sysinfo
 menu

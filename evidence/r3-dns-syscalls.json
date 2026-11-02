@@ -1,0 +1,86 @@
+{
+  "scope": "Owned isolated v5.1.3-r2 server; ptrace observed UDP destinations; no external host was traced",
+  "events": [
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 44,
+      "sockaddr": {
+        "family": 10,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 61
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 44,
+      "sockaddr": {
+        "family": 10,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 61
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    },
+    {
+      "syscall": 307,
+      "sockaddr": {
+        "family": 2,
+        "port": 43444,
+        "ip": "0.0.0.0"
+      },
+      "return": 1
+    }
+  ]
+}

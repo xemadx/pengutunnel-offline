@@ -1,0 +1,572 @@
+{
+  "before_core_sha256": "5d58cdde3483029a70c8b52b9434c4fe4bb4fbc093e47c5c38aba4be9361fb52",
+  "after_core_sha256": "495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250",
+  "before": [
+    {
+      "case": "dns-wildcard-reverse",
+      "pass": false,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": false,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": false,
+              "error": "timed out"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-ipv4-bound-reverse",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0134
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0101
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.03
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3435
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-wildcard-direct",
+      "pass": false,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": false,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": false,
+              "error": "timed out"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-ipv4-bound-direct",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0137
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0104
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0344
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3457
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "tun-custom-explicit-destination",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "tcp",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "tcp",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0234
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0201
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0609
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.6746
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "after": [
+    {
+      "case": "dns-wildcard-reverse",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0126
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0098
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0287
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3231
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-ipv4-bound-reverse",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0133
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.01
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0271
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3201
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-wildcard-direct",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0128
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0104
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0294
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3323
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "dns-ipv4-bound-direct",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "dns",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0134
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0102
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0303
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.3474
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "case": "tun-custom-explicit-destination",
+      "pass": true,
+      "health": {
+        "a": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "server",
+            "transport": "tcp",
+            "uptime_s": 0
+          }
+        },
+        "b": {
+          "status": 200,
+          "body": {
+            "alive": true,
+            "peers": 1,
+            "role": "client",
+            "transport": "tcp",
+            "uptime_s": 0
+          }
+        }
+      },
+      "probe": {
+        "ok": true,
+        "transfers": [
+          [
+            {
+              "bytes": 1,
+              "ok": true,
+              "received": 1,
+              "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+              "seconds": 0.0214
+            },
+            {
+              "bytes": 64,
+              "ok": true,
+              "received": 64,
+              "sha256": "c4399973402d96edcc6b26778dc9bdcedba1bdcdc5df2dc7fc6fa53999a77f38",
+              "seconds": 0.0197
+            },
+            {
+              "bytes": 65536,
+              "ok": true,
+              "received": 65536,
+              "sha256": "8b0a3e846d9808a933047cf1e7976c0ecffb9d4d746de63128092ebaaffe9028",
+              "seconds": 0.0626
+            },
+            {
+              "bytes": 1048576,
+              "ok": true,
+              "received": 1048576,
+              "sha256": "4e36271cced61a01f5c6c575306bdef387beb6849837295a963ff293bd819148",
+              "seconds": 0.6468
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "input_sha256": "5d58cdde3483029a70c8b52b9434c4fe4bb4fbc093e47c5c38aba4be9361fb52",
+  "output_sha256": "495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250",
+  "edits": [
+    {
+      "address": "0x18db3a1",
+      "offset": 21869473,
+      "before": "488d05cac16700",
+      "after": "488d0570040000"
+    },
+    {
+      "address": "0x18db3c8",
+      "offset": 21869512,
+      "before": "488d05a3c16700",
+      "after": "488d0549040000"
+    },
+    {
+      "address": "0x18db3a8",
+      "offset": 21869480,
+      "before": "bb03000000",
+      "after": "bb04000000"
+    },
+    {
+      "address": "0x18db3c0",
+      "offset": 21869504,
+      "before": "bb03000000",
+      "after": "bb04000000"
+    },
+    {
+      "address": "0x18db818",
+      "offset": 21870616,
+      "before": "cccccccc",
+      "after": "75647034"
+    }
+  ],
+  "rationale": "DNS batch sender uses sockaddr_in; force IPv4 ResolveUDPAddr/ListenUDP instead of an IPv6 dual-stack wildcard socket. No new functions or changed Go stack maps."
+}
