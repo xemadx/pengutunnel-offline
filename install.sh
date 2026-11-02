@@ -3,10 +3,10 @@ set -euo pipefail
 umask 077
 
 # Readable bootstrap. Each release pins the exact core and manager it executes.
-REPOSITORY="emad1381/pengutunnel-offline"
-PACKAGE_VERSION="v5.1.3-r3"
+REPOSITORY="xemadx/pengutunnel-offline"
+PACKAGE_VERSION="v5.1.3-r4"
 CORE_SHA="495044c59b0d9515e0ca9b741e81cecabb04a0698a7ad252259de0e52906a250"
-MANAGER_SHA="ea524e999b4c159e614c15e5ea4285a222f5772f29b9fe2c5f27db521c244583"
+MANAGER_SHA="ee2073c3ba1edca80bb7a24b0b435445afbef3ef6d0f9ae20cc7ecef01b42a18"
 VERIFY_ONLY=false
 REF=""
 SOURCE_DIR=""
@@ -100,11 +100,15 @@ case "${1:-menu}" in
   update)
     [[ "$EUID" -eq 0 ]] || { echo 'Run: sudo pengu update [TAG]' >&2; exit 1; }
     (($# <= 2)) || { echo 'Usage: pengu update [TAG]' >&2; exit 1; }
-    ref="${2:-main}"
-    [[ "$ref" =~ ^[[:alnum:]_.-]+$ && "$ref" != .* ]] || { echo 'Invalid tag' >&2; exit 1; }
+    ref="${2:-}"
+    url="https://github.com/xemadx/pengutunnel-offline/releases/latest/download/install.sh"
+    if [[ -n "$ref" ]]; then
+      [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-r[1-9][0-9]*$ ]] || { echo 'Invalid tag' >&2; exit 1; }
+      url="https://github.com/xemadx/pengutunnel-offline/releases/download/$ref/install.sh"
+    fi
     file="$(mktemp)"; trap 'rm -f -- "$file"' EXIT
     curl -fSL --proto '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 \
-      "https://raw.githubusercontent.com/emad1381/pengutunnel-offline/$ref/install.sh" -o "$file"
+      "$url" -o "$file"
     grep -q '^PACKAGE_VERSION=' "$file" || { echo 'This older tag does not support the versioned CLI bootstrap.' >&2; exit 1; }
     bash "$file"
     ;;

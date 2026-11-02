@@ -55,7 +55,7 @@ while (($#)); do
     *) shift ;;
   esac
 done
-[[ "$url" == https://raw.githubusercontent.com/emad1381/pengutunnel-offline/deadbeef/* ]]
+[[ "$url" == https://raw.githubusercontent.com/xemadx/pengutunnel-offline/deadbeef/* ]]
 printf '%s\\n' "$url" >> "$CHECK_REQUESTS"
 cp -- "$CHECK_PACKAGE/${url##*/}" "$output"
 ''')

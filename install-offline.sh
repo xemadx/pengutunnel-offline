@@ -3,7 +3,7 @@ set -o pipefail
 umask 077
 
 SCRIPT_VERSION="4.2.6-offline"
-PACKAGE_VERSION="v5.1.3-r3"
+PACKAGE_VERSION="v5.1.3-r4"
 
 # Local offline build: no upstream core/script updates and no license prompts.
 OFFLINE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

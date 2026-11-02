@@ -16,9 +16,9 @@ def main():
     ref = os.environ.get("GITHUB_REF", "")
     if ref != "refs/tags/" + tag:
         raise SystemExit("Only the matching package tag can publish a release")
-    repository = os.environ.get("GITHUB_REPOSITORY", "emad1381/pengutunnel-offline")
-    if repository != "emad1381/pengutunnel-offline":
-        raise SystemExit("Unexpected repository")
+    repository = os.environ.get("GITHUB_REPOSITORY", "xemadx/pengutunnel-offline")
+    if os.environ.get("GITHUB_REPOSITORY_ID") != "1438976927":
+        raise SystemExit("Unexpected repository identity")
     token = os.environ["GITHUB_TOKEN"]
 
     def request(url, method="GET", body=None, binary=None):

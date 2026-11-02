@@ -1,11 +1,13 @@
 """Trusted parent promotion for explicitly named, bounded engine exports."""
 import os
 import stat
+import json
 
 
 def export(g):
+    label = json.loads((g["ROOT"] / "package/offline-package-manifest.json").read_text(encoding="utf-8"))["package_version"]
     result = g["execute"]("a", ["/usr/bin/python3", "/package/tools/export_engine.py",
-                                "--output", "/scratch/export", "--label", "v5.1.3-r3"], timeout=210)
+                                "--output", "/scratch/export", "--label", label], timeout=210)
     if result.get("exit") != 0:
         raise AssertionError(result)
     source = g["SCR"] / "export"
@@ -14,9 +16,9 @@ def export(g):
     destination_fd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     total = 0
     try:
-        for name, limit in (("engine-functions-v5.1.3-r3.tsv", 5000000),
-                            ("engine-assembly-v5.1.3-r3.asm.gz", 80000000),
-                            ("engine-analysis-v5.1.3-r3.json", 10000)):
+        for name, limit in ((f"engine-functions-{label}.tsv", 5000000),
+                            (f"engine-assembly-{label}.asm.gz", 80000000),
+                            (f"engine-analysis-{label}.json", 10000)):
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source_fd)
             try:
                 before = os.fstat(fd)

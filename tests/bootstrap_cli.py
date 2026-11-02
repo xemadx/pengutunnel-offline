@@ -34,11 +34,13 @@ def check_bootstrap_cli(base, root):
 set -euo pipefail
 export PATH=/scratch/cli-mocks:/usr/sbin:/usr/bin:/sbin:/bin
 if [[ "${1:-}" == reopen ]]; then exec /usr/local/bin/pengu; fi
+if [[ "${1:-}" == update ]]; then exec /usr/local/bin/pengu update; fi
+if [[ "${1:-}" == tagged ]]; then exec /usr/local/bin/pengu update v99.0.0-r1; fi
 cat /package/install.sh | bash -s -- --source-dir /package
 ''')
     script.chmod(0o755)
 
-    def session(reopen=False):
+    def session(mode=None):
         master, slave = pty.openpty()
 
         def terminal():
@@ -49,8 +51,8 @@ cat /package/install.sh | bash -s -- --source-dir /package
                    "/usr/bin/setpriv", "--reuid=0", "--regid=0", "--clear-groups",
                    "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs",
                    "/usr/bin/python3", "-I", "/input/guard.py", "/bin/bash", "/scratch/bootstrap-cli.sh"]
-        if reopen:
-            command.append("reopen")
+        if mode:
+            command.append(mode)
         process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave,
                                    close_fds=True, preexec_fn=terminal)
         os.close(slave)
@@ -89,12 +91,34 @@ cat /package/install.sh | bash -s -- --source-dir /package
         raise AssertionError("Bootstrap did not open the interactive menu")
     if not (scratch / "localbin/pengu").is_file():
         raise AssertionError("Persistent CLI missing")
-    reopened = session(True)
+    reopened = session("reopen")
     if "Configure a new tunnel" not in reopened:
         raise AssertionError("Persistent CLI did not reopen the menu")
     installed = scratch / "root/pengutunnel/pengutunnel"
     if not installed.is_file():
         raise AssertionError("Core was not installed inside the fixture")
+    # Check actual installed update command: latest release by default, exact
+    # release asset for an explicit tag. The mock never accesses the network.
+    (commands / "curl").write_text('''#!/bin/bash
+set -euo pipefail
+url=""; output=""
+while (($#)); do
+  case "$1" in
+    -o) output="$2"; shift 2;;
+    https://*) url="$1"; shift;;
+    *) shift;;
+  esac
+done
+case "$url" in
+  https://github.com/xemadx/pengutunnel-offline/releases/latest/download/install.sh) marker=LATEST_RELEASE;;
+  https://github.com/xemadx/pengutunnel-offline/releases/download/v99.0.0-r1/install.sh) marker=EXACT_RELEASE;;
+  *) echo "Unexpected update URL" >&2; exit 99;;
+esac
+printf 'PACKAGE_VERSION="fixture"\\necho %s\\n' "$marker" > "$output"
+''')
+    if "LATEST_RELEASE" not in session("update") or "EXACT_RELEASE" not in session("tagged"):
+        raise AssertionError("CLI did not select the correct published release")
     return dict(initial_menu=True, reopened_menu=True,
+                update_latest_release=True, update_exact_release=True,
                 installed_core_sha256=hashlib.sha256(installed.read_bytes()).hexdigest(),
                 real_host_services=False, network_fetches=False)

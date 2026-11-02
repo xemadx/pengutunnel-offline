@@ -1,3 +1,5 @@
+r4: اصلاح نشانی‌ها برای حساب xemadx، بررسی هویت ثابت مخزن در انتشار و نصب/آپدیت از آخرین ریلیز منتشرشده. هسته همان اصلاح DNS آزموده‌شدهٔ r3 است.
+
 اصلاح DNS در هستهٔ v5.1.3، رفع باگ‌های نصاب و نصب پایدار CLI.
 
 - مقصد نادرست `0.0.0.0` در ارسال گروهی DNS با همسان‌کردن خانوادهٔ سوکت و فرستنده اصلاح شد؛ DNS این build صریحاً IPv4 است.
@@ -9,7 +11,7 @@
 نصب روی هر دو سرور:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/emad1381/pengutunnel-offline/main/install.sh | sudo bash
+curl -fsSL https://github.com/xemadx/pengutunnel-offline/releases/latest/download/install.sh | sudo bash
 ```
 
 نتیجهٔ آزمون، نسخه و محدودیت‌ها را در README و `docs/AUDIT-R3.fa.md` بخوانید. تست ایزولهٔ محلی تضمین رفتار تمام مسیرهای اینترنتی نیست.
